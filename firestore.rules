@@ -1,0 +1,163 @@
+/**
+ * This ruleset enforces security for a location-based anonymous chat application.
+ *
+ * Core Philosophy:
+ * The security model is built around authenticated, anonymous participation. Any user who has signed in (even anonymously) can read public chat data and create content. However, modification and deletion of data are strictly controlled by ownership, ensuring that users can only manage the content they have created.
+ *
+ * Data Structure:
+ * - /users/{userId}: Private user profile data, only accessible to the user themselves.
+ * - /chatrooms/{chatroomId}: Publicly readable chatroom metadata.
+ * - /chatrooms/{chatroomId}/messages/{messageId}: Publicly readable messages within a chatroom.
+ * - /reports/{reportId}: Private reports submitted by users, readable only by the reporter.
+ *
+ * Key Security Decisions:
+ * - Anonymous Access: The rules fully support anonymous authentication. Most actions require a user to be signed in (request.auth != null), but they do not need a permanent account type like email/password.
+ * - Public Read, Private Write: Chatrooms and messages are publicly readable by any authenticated user. This supports the application's goal of discovering nearby chats. Writes (create, update, delete), however, are strictly controlled.
+ * - Strict Ownership: All user-generated content (user profiles, chatrooms, reports) has a clear owner. Only the owner can modify or delete their content. This is enforced by checking a `creatorId` or `reporterId` field on the document.
+ * - No User Listing: To protect user privacy, it is impossible to list documents in the top-level `/users` collection.
+ * - Immutable Messages: Once a message is sent, it cannot be updated or deleted. This preserves the integrity of conversations.
+ *
+ * Denormalization for Authorization:
+ * This ruleset relies on denormalized owner IDs (e.g., `creatorId`, `senderId`, `reporterId`) stored directly on the documents being secured. This avoids costly and slow `get()` calls to other documents during rule evaluation, leading to simpler, more performant, and more secure rules. For example, a rule on `/chatrooms/{chatroomId}` can instantly check ownership via `resource.data.creatorId` without reading a separate user document.
+ *
+ * Structural Segregation:
+ * User-private data (`/users`) and sensitive data (`/reports`) are stored in separate top-level collections from public data (`/chatrooms`). This separation provides a strong security boundary, preventing accidental data leakage and simplifying list queries.
+ */
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    //-------------------------------------------------------------------------
+    // Helper Functions
+    //-------------------------------------------------------------------------
+
+    /**
+     * Checks if the user is authenticated, including anonymous users.
+     */
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    /**
+     * Checks if the currently authenticated user's UID matches the given userId.
+     * This is the primary function for enforcing data ownership.
+     */
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    /**
+     * Checks if the document being accessed already exists in Firestore.
+     * CRITICAL for preventing writes to non-existent paths on update/delete.
+     */
+    function isExistingDoc() {
+      return resource != null;
+    }
+
+    /**
+     * Validates that the user is the owner of an incoming document on create.
+     * Checks the ownership field (e.g., 'creatorId') in the new data.
+     */
+    function isOwnerOfIncomingData(ownerKey) {
+      return isSignedIn() && request.resource.data[ownerKey] == request.auth.uid;
+    }
+
+    /**
+     * Validates that the user is the owner of an existing document on update/delete.
+     * Checks the ownership field (e.g., 'creatorId') in the stored data.
+     */
+    function isOwnerOfExistingData(ownerKey) {
+      return isSignedIn() && isExistingDoc() && resource.data[ownerKey] == request.auth.uid;
+    }
+    
+    /**
+     * Ensures a specific field on a document is immutable during an update.
+     */
+    function isImmutable(key) {
+      return request.resource.data[key] == resource.data[key];
+    }
+
+    /**
+     * @description
+     *   Manages user profile data. Each user has a document that only they can
+     *   read or write. Listing all users is explicitly forbidden.
+     * @path
+     *   /users/{userId}
+     * @allow
+     *   auth.uid 'user123' (create): A new user creating their own profile document at /users/user123.
+     * @deny
+     *   auth.uid 'user456' (get): A user trying to read another user's profile at /users/user123.
+     * @principle
+     *   Restricts access to a user's own data tree. This is a classic ownership model.
+     */
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow list: if false;
+      allow create: if isOwner(userId) && request.resource.data.id == userId;
+      allow update: if isOwner(userId) && isExistingDoc() && isImmutable('id');
+      allow delete: if isOwner(userId) && isExistingDoc();
+    }
+
+    /**
+     * @description
+     *   Manages chatroom metadata. Any authenticated user can create or read chatrooms,
+     *   but only the original creator can update or delete them.
+     * @path
+     *   /chatrooms/{chatroomId}
+     * @allow
+     *   Any signed-in user (list): Any user can fetch the list of available chatrooms.
+     * @deny
+     *   A user (update): A user who is not the creator cannot change a chatroom's name.
+     * @principle
+     *   Public read with owner-only writes. The `creatorId` field establishes ownership for mutations.
+     */
+    match /chatrooms/{chatroomId} {
+      allow get, list: if isSignedIn();
+      allow create: if isOwnerOfIncomingData('creatorId');
+      allow update: if isOwnerOfExistingData('creatorId') && isImmutable('creatorId');
+      allow delete: if isOwnerOfExistingData('creatorId');
+
+      /**
+       * @description
+       *   Manages messages within a chatroom. Any authenticated user can read existing
+       *   messages or post new ones. Messages are immutable and cannot be edited or deleted.
+       * @path
+       *   /chatrooms/{chatroomId}/messages/{messageId}
+       * @allow
+       *   Any signed-in user (create): Any authenticated user can post a message to any chatroom.
+       * @deny
+       *   Any user (update): No one is allowed to edit a message after it has been sent.
+       * @principle
+       *   Open contribution for authenticated users, with immutability to preserve conversation history.
+       */
+      match /messages/{messageId} {
+        allow get, list: if isSignedIn();
+        allow create: if isOwnerOfIncomingData('senderId') && request.resource.data.chatroomId == chatroomId;
+        allow update: if false;
+        allow delete: if false;
+      }
+    }
+
+    /**
+     * @description
+     *   Manages user-submitted reports on inappropriate content. Any authenticated user
+     *   can create a report, but reports are private and can only be seen, updated, or
+     *   deleted by the user who created them.
+     * @path
+     *   /reports/{reportId}
+     * @allow
+     *   auth.uid 'user123' (create): A user creating a new report.
+     * @deny
+     *   Any user (list): Listing all reports in the system is forbidden to protect privacy.
+     * @principle
+     *   Enforces document ownership for all operations, ensuring reports remain confidential.
+     */
+    match /reports/{reportId} {
+      allow get: if isOwnerOfExistingData('reporterId');
+      allow list: if false;
+      allow create: if isOwnerOfIncomingData('reporterId');
+      allow update: if isOwnerOfExistingData('reporterId') && isImmutable('reporterId');
+      allow delete: if isOwnerOfExistingData('reporterId');
+    }
+  }
+}

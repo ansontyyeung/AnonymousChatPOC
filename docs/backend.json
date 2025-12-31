@@ -1,0 +1,242 @@
+{
+  "entities": {
+    "Chatroom": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Chatroom",
+      "type": "object",
+      "description": "Represents a chatroom with a specific geographical radius.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the chatroom."
+        },
+        "name": {
+          "type": "string",
+          "description": "The name of the chatroom."
+        },
+        "latitude": {
+          "type": "number",
+          "description": "Latitude of the chatroom's center."
+        },
+        "longitude": {
+          "type": "number",
+          "description": "Longitude of the chatroom's center."
+        },
+        "radius": {
+          "type": "number",
+          "description": "Radius of the chatroom in meters."
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp of when the chatroom was created.",
+          "format": "date-time"
+        },
+        "creatorId": {
+          "type": "string",
+          "description": "Reference to User who created the chatroom. (Relationship: User 1:N Chatroom)"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "latitude",
+        "longitude",
+        "radius",
+        "createdAt",
+        "creatorId"
+      ]
+    },
+    "Message": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Message",
+      "type": "object",
+      "description": "Represents a message within a chatroom.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the message."
+        },
+        "chatroomId": {
+          "type": "string",
+          "description": "Reference to Chatroom this message belongs to. (Relationship: Chatroom 1:N Message)"
+        },
+        "senderId": {
+          "type": "string",
+          "description": "Reference to User who sent the message. (Relationship: User 1:N Message)"
+        },
+        "content": {
+          "type": "string",
+          "description": "Content of the message."
+        },
+        "timestamp": {
+          "type": "string",
+          "description": "Timestamp of when the message was sent.",
+          "format": "date-time"
+        },
+        "isReported": {
+          "type": "boolean",
+          "description": "Indicates if the message has been reported."
+        }
+      },
+      "required": [
+        "id",
+        "chatroomId",
+        "senderId",
+        "content",
+        "timestamp",
+        "isReported"
+      ]
+    },
+    "User": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "User",
+      "type": "object",
+      "description": "Represents a user of the application.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the user."
+        },
+        "lastKnownLatitude": {
+          "type": "number",
+          "description": "Last known latitude of the user."
+        },
+        "lastKnownLongitude": {
+          "type": "number",
+          "description": "Last known longitude of the user."
+        },
+        "lastLogin": {
+          "type": "string",
+          "description": "Timestamp of the user's last login.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "lastKnownLatitude",
+        "lastKnownLongitude",
+        "lastLogin"
+      ]
+    },
+    "Report": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Report",
+      "type": "object",
+      "description": "Represents a user report for inappropriate messages or content.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the report."
+        },
+        "reporterId": {
+          "type": "string",
+          "description": "Reference to User who created the report. (Relationship: User 1:N Report)"
+        },
+        "reportedMessageId": {
+          "type": "string",
+          "description": "Reference to Message that was reported. (Relationship: Message 1:N Report)"
+        },
+        "reason": {
+          "type": "string",
+          "description": "Reason for the report."
+        },
+        "timestamp": {
+          "type": "string",
+          "description": "Timestamp of when the report was created.",
+          "format": "date-time"
+        },
+        "status": {
+          "type": "string",
+          "description": "Status of the report (e.g., pending, resolved)."
+        }
+      },
+      "required": [
+        "id",
+        "reporterId",
+        "reportedMessageId",
+        "reason",
+        "timestamp",
+        "status"
+      ]
+    }
+  },
+  "auth": {
+    "providers": [
+      "password",
+      "anonymous"
+    ]
+  },
+  "firestore": {
+    "structure": [
+      {
+        "path": "users/{userId}",
+        "definition": {
+          "entityName": "User",
+          "schema": {
+            "$ref": "#/backend/entities/User"
+          },
+          "description": "Stores user profile data. The 'userId' is derived from request.auth.uid.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user, obtained from Firebase Authentication."
+            }
+          ]
+        }
+      },
+      {
+        "path": "chatrooms/{chatroomId}",
+        "definition": {
+          "entityName": "Chatroom",
+          "schema": {
+            "$ref": "#/backend/entities/Chatroom"
+          },
+          "description": "Stores chatroom metadata, including location and creator information.",
+          "params": [
+            {
+              "name": "chatroomId",
+              "description": "The unique identifier for the chatroom."
+            }
+          ]
+        }
+      },
+      {
+        "path": "chatrooms/{chatroomId}/messages/{messageId}",
+        "definition": {
+          "entityName": "Message",
+          "schema": {
+            "$ref": "#/backend/entities/Message"
+          },
+          "description": "Stores messages within a specific chatroom. Includes 'chatroomId' for direct querying. Supports retrieval without authorization dependencies on parent document attributes.",
+          "params": [
+            {
+              "name": "chatroomId",
+              "description": "The unique identifier for the chatroom."
+            },
+            {
+              "name": "messageId",
+              "description": "The unique identifier for the message."
+            }
+          ]
+        }
+      },
+      {
+        "path": "reports/{reportId}",
+        "definition": {
+          "entityName": "Report",
+          "schema": {
+            "$ref": "#/backend/entities/Report"
+          },
+          "description": "Stores reports for inappropriate messages. Contains 'reporterId' and 'reportedMessageId'.  Facilitates efficient querying and management.",
+          "params": [
+            {
+              "name": "reportId",
+              "description": "The unique identifier for the report."
+            }
+          ]
+        }
+      }
+    ],
+    "reasoning": "The Firestore data structure is designed to support RadiusTalk's core features, focusing on anonymous chat within geographical boundaries. The structure prioritizes Authorization Independence through denormalization and structural segregation for simplified security rules and scalable queries. Path-based ownership is used for user-related data, while a membership map approach handles collaborative chatroom access. \n\n**Authorization Independence & Denormalization:**\n\n*   `chatrooms/{chatroomId}/messages/{messageId}`:  Each message stores a `chatroomId` which supports direct querying of messages within a chatroom without needing to traverse user collections or perform complex joins. This enables efficient message retrieval and avoids authorization dependencies on parent document attributes. For reporting feature, the `messageId` is stored in `/reports/{reportId}`, this avoid complex dependencies.\n\n**Structural Segregation & QAPs (Rules are not Filters):**\n\n*   `users/{userId}`: Stores user profile data. Path-based ownership ensures only the user can modify their profile. The `userId` is derived from `request.auth.uid`.\n*   `chatrooms/{chatroomId}`: Stores chatroom metadata. Chatrooms can be created by any authenticated user. Authorization is managed through the `creatorId` field and potential future membership roles stored within the chatroom document itself or in subcollections.\n\n*   `chatrooms/{chatroomId}/messages/{messageId}`: Stores individual messages within a chatroom.  Since users are anonymous, no additional user-specific collections are necessary.  Message content is accessible to any user who is \"nearby\" the chatroom, a geographic constraint enforced by the application logic (and potentially security rules using a geo-hashing strategy, not explicitly modeled here). Reports have their own collection and point to messages.\n\n*   `reports/{reportId}`: Stores reports for inappropriate messages. Any authenticated user can create a report, which includes the `reporterId` and `reportedMessageId`. Separating reports into a dedicated collection simplifies querying and management, without impacting the message documents directly.\n\nThe design supports required QAPs by:\n\n*   Enabling secure `list` operations for chatrooms based on proximity, enforced by application logic using `latitude`, `longitude`, and `radius` (though geo-hashing and corresponding security rules would provide increased security).\n*   Allowing efficient querying of messages within a chatroom via the `chatroomId` field, preventing the need to filter based on message content or sender within the rules.\n*   Providing a dedicated `/reports` collection to list and manage reports without complex filtering logic within the security rules."
+  }
+}

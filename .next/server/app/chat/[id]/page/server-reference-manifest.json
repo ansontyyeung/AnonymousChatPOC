@@ -1,0 +1,20 @@
+{
+  "node": {
+    "40e7bdbb42eb2dc0438791763ff4f2b35a0bbfc8d1": {
+      "workers": {
+        "app/chat/[id]/page": {
+          "moduleId": "[project]/.next-internal/server/app/chat/[id]/page/actions.js { ACTIONS_MODULE0 => \"[project]/src/ai/flows/report-inappropriate-content.ts [app-rsc] (ecmascript)\" } [app-rsc] (server actions loader, ecmascript)",
+          "async": false,
+          "exportedName": "reportInappropriateContent",
+          "filename": "src/ai/flows/report-inappropriate-content.ts"
+        }
+      },
+      "layer": {
+        "app/chat/[id]/page": "action-browser"
+      },
+      "exportedName": "reportInappropriateContent",
+      "filename": "src/ai/flows/report-inappropriate-content.ts"
+    }
+  },
+  "edge": {}
+}
